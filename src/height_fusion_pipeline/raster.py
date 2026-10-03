@@ -4,9 +4,9 @@ import logging
 import math
 import os
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import boto3
 import geopandas as gpd
@@ -25,13 +25,11 @@ from shapely.geometry.base import BaseGeometry
 from height_fusion_pipeline.config import CanopyConfig, ProcessingConfig
 from height_fusion_pipeline.logging_utils import log_timed_step
 from height_fusion_pipeline.utils import (
-    build_unsigned_s3_client,
-    bytes_to_human,
-    download_s3_to_tempfile,
+    cached_s3_download,
     first_present,
+    is_s3_uri,
     parse_s3_uri,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -45,7 +43,6 @@ class RasterHeader:
     width: int
     height: int
     res: tuple[float, float]
-    size_bytes: int
 
 
 @dataclass(slots=True)
@@ -54,93 +51,48 @@ class CanopySource:
 
     def find_intersecting_tiles(self, request_geom_wgs84: BaseGeometry) -> list[RasterHeader]:
         with log_timed_step(LOGGER, "discover canopy tiles"):
-            if self.config.tile_index_geojson:
-                headers = self._tiles_from_index(request_geom_wgs84)
-            else:
-                headers = self._tiles_from_prefix_scan(request_geom_wgs84)
+            headers = self._tiles_from_index(request_geom_wgs84)
 
         if not headers:
             raise RuntimeError("No canopy GeoTIFF tile intersects the requested geometry.")
 
-        total_size = sum(item.size_bytes for item in headers)
-        LOGGER.info(
-            "Selected %s canopy tile(s), estimated source size %s.",
-            len(headers),
-            bytes_to_human(total_size),
-        )
+        LOGGER.info("Selected %s canopy tile(s).", len(headers))
         self._validate_headers(headers)
         return headers
 
     def _tiles_from_index(self, request_geom_wgs84: BaseGeometry) -> list[RasterHeader]:
-        temp_path = None
         path = self.config.tile_index_geojson
-        try:
-            if path is None:
-                return []
-            if path.startswith("s3://"):
-                temp_path = download_s3_to_tempfile(path, self.config.s3_region)
-                source_path = temp_path
-            else:
-                source_path = path
-            index_gdf = gpd.read_file(source_path)
-            if index_gdf.crs is None:
-                index_gdf = index_gdf.set_crs("EPSG:4326")
-            request_series = gpd.GeoSeries([request_geom_wgs84], crs="EPSG:4326").to_crs(index_gdf.crs)
-            matches = index_gdf[index_gdf.intersects(request_series.iloc[0])].copy()
-            if matches.empty:
-                return []
-
-            headers: list[RasterHeader] = []
-            for _, row in matches.iterrows():
-                uri = first_present(row.to_dict(), ["href", "uri", "path", "tile", "location", "asset"])
-                if not uri:
-                    continue
-                uri = str(uri)
-                if not uri.startswith("s3://"):
-                    prefix_bucket, prefix_key = parse_s3_uri(self.config.s3_uri_prefix)
-                    relative_uri = uri.lstrip("/")
-                    if not Path(relative_uri).suffix:
-                        relative_uri = f"chm/{relative_uri}.tif"
-                    uri = f"s3://{prefix_bucket}/{prefix_key.rstrip('/')}/{relative_uri}"
-                header = self._read_raster_header(uri)
-                if self._intersects_header(header, request_geom_wgs84):
-                    headers.append(header)
-            return headers
-        finally:
-            if temp_path and os.path.exists(temp_path):
-                os.remove(temp_path)
-
-    def _tiles_from_prefix_scan(self, request_geom_wgs84: BaseGeometry) -> list[RasterHeader]:
-        if not self.config.allow_full_prefix_scan:
-            raise RuntimeError("canopy.tile_index_geojson is not set and full prefix scan is disabled.")
-
-        bucket, prefix = parse_s3_uri(self.config.s3_uri_prefix)
-        client = build_unsigned_s3_client(self.config.s3_region)
-        paginator = client.get_paginator("list_objects_v2")
+        if is_s3_uri(path):
+            source_path = cached_s3_download(path, self.config.s3_region, self.config.cache_dir)
+        else:
+            source_path = Path(path)
+        index_gdf = gpd.read_file(source_path)
+        if index_gdf.crs is None:
+            index_gdf = index_gdf.set_crs("EPSG:4326")
+        request_series = gpd.GeoSeries([request_geom_wgs84], crs="EPSG:4326").to_crs(index_gdf.crs)
+        matches = index_gdf[index_gdf.intersects(request_series.iloc[0])]
 
         headers: list[RasterHeader] = []
-        scanned = 0
-        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-            for obj in page.get("Contents", []):
-                key = obj["Key"]
-                if not key.lower().endswith((".tif", ".tiff")):
-                    continue
-                scanned += 1
-                if self.config.max_scan_tiles and scanned > self.config.max_scan_tiles:
-                    LOGGER.warning(
-                        "Reached canopy scan limit (%s). Provide a tile index for large datasets.",
-                        self.config.max_scan_tiles,
-                    )
-                    return headers
-                uri = f"s3://{bucket}/{key}"
-                header = self._read_raster_header(uri, size_bytes=obj.get("Size", 0))
-                if self._intersects_header(header, request_geom_wgs84):
-                    headers.append(header)
-
-        LOGGER.info("Scanned %s canopy object(s) under %s.", scanned, self.config.s3_uri_prefix)
+        for _, row in matches.iterrows():
+            uri = first_present(row.to_dict(), ["href", "uri", "path", "tile", "location", "asset"])
+            if not uri:
+                continue
+            header = self._read_raster_header(self._resolve_tile_uri(str(uri)))
+            if self._intersects_header(header, request_geom_wgs84):
+                headers.append(header)
         return headers
 
-    def _read_raster_header(self, uri: str, size_bytes: int = 0) -> RasterHeader:
+    def _resolve_tile_uri(self, uri: str) -> str:
+        """Map index entries such as ``132122232`` to ``<prefix>/chm/132122232.tif``."""
+        if is_s3_uri(uri) or Path(uri).is_file():
+            return uri
+        prefix_bucket, prefix_key = parse_s3_uri(self.config.s3_uri_prefix)
+        relative_uri = uri.lstrip("/")
+        if not Path(relative_uri).suffix:
+            relative_uri = f"chm/{relative_uri}.tif"
+        return f"s3://{prefix_bucket}/{prefix_key.rstrip('/')}/{relative_uri}"
+
+    def _read_raster_header(self, uri: str) -> RasterHeader:
         with rasterio.Env(AWS_NO_SIGN_REQUEST="YES", AWS_REGION=self.config.s3_region):
             with rasterio.open(_to_rasterio_path(uri)) as src:
                 return RasterHeader(
@@ -151,7 +103,6 @@ class CanopySource:
                     width=src.width,
                     height=src.height,
                     res=src.res,
-                    size_bytes=size_bytes,
                 )
 
     def _intersects_header(self, header: RasterHeader, request_geom_wgs84: BaseGeometry) -> bool:
@@ -308,6 +259,10 @@ def upload_geotiff_to_s3(local_path: str, s3_uri: str) -> None:
     client.upload_file(local_path, bucket, key, ExtraArgs={"ContentType": "image/tiff"})
 
 
+def empty_buildings(crs: object) -> gpd.GeoDataFrame:
+    return gpd.GeoDataFrame({"height_m": np.array([], dtype="float32")}, geometry=gpd.GeoSeries([], crs=crs), crs=crs)
+
+
 class _OpenWarpedVRTs:
     def __init__(self, headers: list[RasterHeader], grid: FusionGrid) -> None:
         self.headers = headers
@@ -446,7 +401,10 @@ def _iter_windows(width: int, height: int, chunk_size: int) -> Iterable[windows.
             yield windows.Window(col_off=col_off, row_off=row_off, width=win_width, height=win_height)
 
 
-def _transform_bounds(bounds: tuple[float, float, float, float], transformer: Transformer) -> tuple[float, float, float, float]:
+Bounds = tuple[float, float, float, float]
+
+
+def _transform_bounds(bounds: Bounds, transformer: Transformer) -> Bounds:
     xs = [bounds[0], bounds[2], bounds[0], bounds[2]]
     ys = [bounds[1], bounds[1], bounds[3], bounds[3]]
     tx, ty = transformer.transform(xs, ys)
@@ -454,7 +412,7 @@ def _transform_bounds(bounds: tuple[float, float, float, float], transformer: Tr
 
 
 def _to_rasterio_path(uri: str) -> str:
-    if not uri.startswith("s3://"):
+    if not is_s3_uri(uri):
         return uri
     bucket, key = parse_s3_uri(uri)
     return f"/vsis3/{bucket}/{key}"

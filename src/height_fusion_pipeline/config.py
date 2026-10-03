@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
-
 FusionMode = Literal["max", "building_priority"]
+
+DEFAULT_CANOPY_PREFIX = "s3://dataforgood-fb-data/forests/v1/alsgedi_global_v6_float/"
+DEFAULT_CANOPY_TILE_INDEX = DEFAULT_CANOPY_PREFIX + "tiles.geojson"
+DEFAULT_CACHE_DIR = Path.home() / ".cache" / "height_fusion"
 
 
 @dataclass(slots=True)
@@ -25,11 +29,10 @@ class OvertureConfig:
 
 @dataclass(slots=True)
 class CanopyConfig:
-    s3_uri_prefix: str = "s3://dataforgood-fb-data/forests/v1/alsgedi_global_v6_float/"
+    s3_uri_prefix: str = DEFAULT_CANOPY_PREFIX
     s3_region: str = "us-east-1"
-    tile_index_geojson: str | None = None
-    max_scan_tiles: int | None = None
-    allow_full_prefix_scan: bool = True
+    tile_index_geojson: str = DEFAULT_CANOPY_TILE_INDEX
+    cache_dir: Path = DEFAULT_CACHE_DIR
 
 
 @dataclass(slots=True)
@@ -44,8 +47,9 @@ class ProcessingConfig:
 
 @dataclass(slots=True)
 class OutputConfig:
-    output_s3_uri: str = ""
+    output_uri: str = ""
     temp_dir: str | None = None
+    debug_dir: str | None = None
 
 
 @dataclass(slots=True)

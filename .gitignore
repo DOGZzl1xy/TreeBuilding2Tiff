@@ -1,17 +1,17 @@
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*.egg-info/
+dist/
+build/
 
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 
 .venv/
-venv/
-env/
 
 artifacts/
+outputs/
 *.aux.xml
 
 .DS_Store

@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from height_fusion_pipeline.config import (
+    DEFAULT_CACHE_DIR,
+    DEFAULT_CANOPY_PREFIX,
+    DEFAULT_CANOPY_TILE_INDEX,
     CanopyConfig,
     InputConfig,
     JobConfig,
-    OvertureConfig,
     OutputConfig,
+    OvertureConfig,
     ProcessingConfig,
 )
 from height_fusion_pipeline.logging_utils import setup_logging
-from height_fusion_pipeline.pipeline import run_pipeline
+from height_fusion_pipeline.pipeline import run_each_feature, run_pipeline
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,22 +33,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Local path, S3 URI, or inline GeoJSON geometry/feature/feature collection.",
     )
 
-    parser.add_argument("--output-s3", required=True, help="Target S3 URI for fused GeoTIFF.")
+    parser.add_argument(
+        "--output",
+        "--output-s3",
+        dest="output",
+        required=True,
+        help="Output GeoTIFF: a local path or an s3:// URI.",
+    )
+    parser.add_argument(
+        "--each-feature",
+        action="store_true",
+        help="With --boundary-geojson: write one GeoTIFF per feature; --output is then a directory or S3 prefix.",
+    )
+    parser.add_argument("--name-field", help="Feature property used to name per-feature outputs (default: index).")
+    parser.add_argument(
+        "--debug-dir",
+        help="Also write request_boundary.geojson, buildings.geojson, canopy_only.tif and metadata.json here.",
+    )
     parser.add_argument("--overture-release", default="latest", help="Overture release or 'latest'.")
     parser.add_argument("--overture-bucket", default="overturemaps-us-west-2")
     parser.add_argument("--overture-region", default="us-west-2")
     parser.add_argument("--default-building-height", type=float, default=4.0)
     parser.add_argument("--meters-per-floor", type=float, default=3.0)
 
-    parser.add_argument(
-        "--canopy-prefix",
-        default="s3://dataforgood-fb-data/forests/v1/alsgedi_global_v6_float/",
-        help="Meta canopy tile S3 prefix.",
-    )
+    parser.add_argument("--canopy-prefix", default=DEFAULT_CANOPY_PREFIX, help="Meta canopy tile S3 prefix.")
     parser.add_argument("--canopy-region", default="us-east-1")
-    parser.add_argument("--canopy-tile-index", help="Optional GeoJSON tile index path or S3 URI.")
-    parser.add_argument("--max-scan-tiles", type=int, help="Optional safety limit when scanning canopy prefix.")
-    parser.add_argument("--disable-full-prefix-scan", action="store_true")
+    parser.add_argument(
+        "--canopy-tile-index",
+        default=DEFAULT_CANOPY_TILE_INDEX,
+        help="Canopy tile index GeoJSON (local path or S3 URI).",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=DEFAULT_CACHE_DIR,
+        help="Cache directory for the downloaded tile index.",
+    )
 
     parser.add_argument("--chunk-size", type=int, default=2048)
     parser.add_argument("--fusion-mode", choices=["max", "building_priority"], default="max")
@@ -56,8 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_args() -> JobConfig:
-    args = build_parser().parse_args()
+def config_from_args(args: argparse.Namespace) -> JobConfig:
     return JobConfig(
         input=InputConfig(
             bbox=tuple(args.bbox) if args.bbox else None,
@@ -74,8 +97,7 @@ def parse_args() -> JobConfig:
             s3_uri_prefix=args.canopy_prefix,
             s3_region=args.canopy_region,
             tile_index_geojson=args.canopy_tile_index,
-            max_scan_tiles=args.max_scan_tiles,
-            allow_full_prefix_scan=not args.disable_full_prefix_scan,
+            cache_dir=args.cache_dir,
         ),
         processing=ProcessingConfig(
             chunk_size=args.chunk_size,
@@ -84,12 +106,21 @@ def parse_args() -> JobConfig:
             output_nodata=args.output_nodata,
             preserve_empty_as_nodata=args.preserve_empty_as_nodata,
         ),
-        output=OutputConfig(output_s3_uri=args.output_s3, temp_dir=args.temp_dir),
+        output=OutputConfig(output_uri=args.output, temp_dir=args.temp_dir, debug_dir=args.debug_dir),
         log_level=args.log_level,
     )
 
 
-def main() -> None:
-    config = parse_args()
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.each_feature and not args.boundary_geojson:
+        parser.error("--each-feature requires --boundary-geojson")
+    config = config_from_args(args)
     setup_logging(config.log_level)
+    if args.each_feature:
+        results = run_each_feature(config, name_field=args.name_field)
+        if any(item["status"] != "ok" for item in results):
+            raise SystemExit(1)
+        return
     run_pipeline(config)
