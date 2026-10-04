@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Memo: status of the canopy and building height fusion tool, tested on U.S. LiDAR-gap towns, with a proposed accuracy check.">
+<meta name="description" content="Memo: status of the canopy and building height fusion tool, tested on U.S. LiDAR-gap towns, with a planned accuracy check.">
 <title>Height Fusion Memo</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -92,19 +92,11 @@ footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--rul
     <header>
       <div class="kind">Memorandum</div>
       <dl class="head">
-        <dt>TO</dt><dd>Prof. Xiaojiang Li</dd>
-        <dt>FROM</dt><dd>Xuanyu Zhou</dd>
-        <dt>DATE</dt><dd>October 3, 2026</dd>
-        <dt>RE</dt><dd class="re">The height fusion tool works on U.S. LiDAR-gap towns; accuracy check proposed before scaling up</dd>
+        <dt>RE</dt><dd class="re">The height fusion tool works on U.S. LiDAR-gap towns; an accuracy check comes next</dd>
       </dl>
     </header>
 
-    <p class="bluf">The height fusion package combines Meta's canopy height map with Overture building heights into a single surface-height GeoTIFF, with pixels just under 1 m on the ground, for any boundary, using only public data. I tested it on two Michigan towns that have no modern LiDAR, and each took 75 to 85 seconds. <strong>Its accuracy has not been measured yet.</strong> Before running it on the full gap list from memo 1, I propose comparing its output with 3DEP LiDAR in a few towns that do have coverage.</p>
-
-    <div class="ask">
-      <div class="label">Decision requested</div>
-      <p>Approve the accuracy check below, and either name two Global South cities to test or let me choose them.</p>
-    </div>
+    <p class="bluf">The height fusion package uses only public data to combine Meta's canopy height map with Overture building heights. For any boundary it writes one surface-height GeoTIFF with pixels just under 1 m on the ground. I tested it on two Michigan towns that have no modern LiDAR, and each took 75 to 85 seconds. <strong>Its accuracy has not been measured yet.</strong> Before running it on the full gap list from memo 1, I plan to compare its output with 3DEP LiDAR in a few towns that do have coverage.</p>
 
     <div class="figs" aria-label="Headline figures">
       <div><div class="v">0.9 m</div><div class="k">ground pixel size in Michigan (1.2 m Web Mercator grid of the canopy map)</div></div>
@@ -113,7 +105,7 @@ footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--rul
     </div>
 
     <section>
-      <h2>It produces a usable height layer for a gap town in under 90 seconds</h2>
+      <h2>It produced a height layer for each test town in under 90 seconds</h2>
       <p>I chose Gobles city and Hartford city in Van Buren County, Michigan, because memo 1 shows both with 0% modern LiDAR in either source. The only LiDAR covering them was flown in December 2014. For a bounding box around Gobles, the tool found 500 Overture buildings and one canopy tile and wrote a 2,452 × 1,830 pixel grid. Heights have a median of 9 m and a maximum of 24 m. Run as a batch on the two town boundaries, it processed Gobles (468 buildings) in 74 seconds and Hartford (1,172 buildings) in 83 seconds.</p>
       <figure>
         <img src="gobles_fusion.png" alt="Two maps of central Gobles, Michigan. Left: canopy height only, in greens. Right: the fused output, where pixels raised by building footprints are marked in orange across the town grid." width="1137" height="511">
@@ -123,19 +115,18 @@ footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--rul
 
     <section>
       <h2>In the U.S., most building heights come from Overture's own data</h2>
-      <p>When a building has no height, the tool estimates one at 3 m per floor, or 4 m if the floor count is also missing. In Gobles only 35 of 500 buildings (7%) needed an estimate. In an earlier Hong Kong sample the figure was 390 of 438 (89%). Places with sparse height data will rely much more on these defaults, so the Global South test needs to measure how much that affects results.</p>
+      <p>When a building has no height, the tool estimates one at 3 m per floor, or 4 m if the floor count is also missing. In Gobles only 35 of 500 buildings (7%) needed an estimate. In an earlier Hong Kong sample the figure was 390 of 438 (89%). Places with sparse height data will rely much more on these defaults, so the Global South runs will measure how often they are used.</p>
     </section>
 
     <section>
-      <h2>An accuracy check against 3DEP should come before a large run</h2>
-      <p>No output has yet been compared with measured heights. I propose this check:</p>
+      <h2>Next, I plan to check accuracy against 3DEP LiDAR</h2>
+      <p>No output has been compared with measured heights yet. The check has three steps:</p>
       <ol>
         <li>Pick three to five towns that have full LiDAR coverage from 2015 or later, of different sizes and in different regions.</li>
         <li>Run the tool there and build a reference surface height from the 3DEP point clouds.</li>
         <li>Report the error separately for buildings and for tree canopy, and the share of buildings that used an estimated height.</li>
-        <li>Repeat the run, without the LiDAR comparison, for two Global South cities to measure how many heights are estimated there.</li>
       </ol>
-      <p>Running the 396-town list after that would take roughly 9 hours on one machine at about 80 seconds per town. This is an estimate from the two test towns, and larger towns will take longer.</p>
+      <p>I will also run the tool for two Global South cities. There is no LiDAR to compare against, but the runs will show how many building heights have to be estimated.</p>
     </section>
 
     <section>
@@ -150,9 +141,9 @@ footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--rul
     <section>
       <h2>Next steps</h2>
       <ol class="next">
-        <li><strong>You:</strong> approve the accuracy check, and name two Global South cities or let me choose.</li>
-        <li><strong>Me, after your reply:</strong> write the 3DEP comparison, run it in the selected towns, and send the error figures in a follow-up memo.</li>
-        <li><strong>Me, after the check:</strong> run the tool on the gap list you confirm in memo 1.</li>
+        <li>Write the 3DEP comparison, run it in three to five towns with full coverage, and report the error figures in a follow-up memo.</li>
+        <li>Run the tool for two Global South cities and report the share of estimated building heights.</li>
+        <li>After the check, run the tool on the gap list from memo 1.</li>
       </ol>
     </section>
 
