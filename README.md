@@ -35,7 +35,7 @@ git clone https://github.com/DOGZzl1xy/TreeBuilding2Tiff && cd TreeBuilding2Tiff
 每次运行为一个范围输出一张 GeoTIFF，`--output` 可以是本地路径或 `s3://` 地址：
 
 ```bash
-height-fusion --bbox 114.154 22.281 114.164 22.291 --output outputs/hk/fused_height.tif
+height-fusion --bbox -85.8889 42.3538 -85.8626 42.3683 --output outputs/gobles_mi/fused_height.tif
 ```
 
 ```bash
@@ -58,8 +58,8 @@ height-fusion --boundary-geojson towns.geojson --each-feature --name-field GEOID
 from height_fusion_pipeline import fuse_heights
 
 fuse_heights(
-    "outputs/hk/fused_height.tif",
-    bbox=(114.154, 22.281, 114.164, 22.291),
+    "outputs/gobles_mi/fused_height.tif",
+    bbox=(-85.8889, 42.3538, -85.8626, 42.3683),
     fusion_mode="max",
     overture_release="2026-09-23.1",
 )
@@ -120,7 +120,7 @@ uv run python -m unittest discover -s tests
 uv build
 ```
 
-单元测试使用合成数据，不需要联网。2026-10-03 的联网测试中，香港 bbox `114.154 22.281 114.164 22.291`（Overture `2026-09-23.1`）命中 1 个树冠 tile，网格 934 × 1008，438 栋建筑。两个香港小范围的批量运行也成功完成。
+单元测试使用合成数据，不需要联网。联网测试（2026-10-03，Overture `2026-09-23.1`）选用 LiDAR 覆盖分析中两个数据源都显示为 0% 现代覆盖的密歇根州 Van Buren 县小城：Gobles city 的 bbox `-85.8889 42.3538 -85.8626 42.3683` 命中 1 个树冠 tile，生成 2452 × 1830 网格（约 1.2 米像元），500 栋建筑中 35 栋使用估算高度；Gobles 和 Hartford 两个镇界的批量运行各约 75 到 85 秒，分别包含 468 和 1,172 栋建筑。
 
 ---
 
@@ -155,7 +155,7 @@ git clone https://github.com/DOGZzl1xy/TreeBuilding2Tiff && cd TreeBuilding2Tiff
 Each run writes one GeoTIFF for one area. `--output` can be a local path or an `s3://` URI:
 
 ```bash
-height-fusion --bbox 114.154 22.281 114.164 22.291 --output outputs/hk/fused_height.tif
+height-fusion --bbox -85.8889 42.3538 -85.8626 42.3683 --output outputs/gobles_mi/fused_height.tif
 ```
 
 ```bash
@@ -178,8 +178,8 @@ Each file is named after the feature's `--name-field` value, or its index if no 
 from height_fusion_pipeline import fuse_heights
 
 fuse_heights(
-    "outputs/hk/fused_height.tif",
-    bbox=(114.154, 22.281, 114.164, 22.291),
+    "outputs/gobles_mi/fused_height.tif",
+    bbox=(-85.8889, 42.3538, -85.8626, 42.3683),
     fusion_mode="max",
     overture_release="2026-09-23.1",
 )
@@ -240,4 +240,4 @@ uv run python -m unittest discover -s tests
 uv build
 ```
 
-The unit tests use synthetic data and run offline. In a live test on 2026-10-03, the Hong Kong bbox `114.154 22.281 114.164 22.291` (Overture `2026-09-23.1`) hit 1 canopy tile, produced a 934 × 1008 grid, and found 438 buildings. A two-feature Hong Kong batch also ran successfully.
+The unit tests use synthetic data and run offline. The live tests (2026-10-03, Overture `2026-09-23.1`) use two small cities in Van Buren County, Michigan, which have 0% modern LiDAR coverage in both sources of the LiDAR coverage analysis. The Gobles city bbox `-85.8889 42.3538 -85.8626 42.3683` hit 1 canopy tile and produced a 2452 × 1830 grid (about 1.2 m pixels); 35 of its 500 buildings needed an estimated height. A batch over the Gobles and Hartford town boundaries took about 75 to 85 seconds per town and covered 468 and 1,172 buildings.
