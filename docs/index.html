@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Memo: status of the canopy and building height fusion tool, tested on U.S. LiDAR-gap towns, with a proposed accuracy check.">
+<title>Height Fusion Memo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: a memo sheet, one ~720px column; header block, decision box, claim headings, appendix. */
+:root {
+  --bg: #eef2f2; --paper: #ffffff; --fg: #18252b; --muted: #59696f; --rule: #d3dcdf;
+  --accent: #1d6b73; --accent-2: #b4c8cc; --ask-bg: #edf5f3; --ask-rule: #1d6b73; --warn: #8a5a12;
+  --font-display: "Source Serif 4", Georgia, serif;
+  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #0f181b; --paper: #162226; --fg: #e2ebed; --muted: #9aabb1; --rule: #2a3a3f;
+    --accent: #5cb3bb; --accent-2: #3c545a; --ask-bg: #1b2e30; --ask-rule: #5cb3bb; --warn: #e0b46a; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #0f181b; --paper: #162226; --fg: #e2ebed; --muted: #9aabb1; --rule: #2a3a3f;
+  --accent: #5cb3bb; --accent-2: #3c545a; --ask-bg: #1b2e30; --ask-rule: #5cb3bb; --warn: #e0b46a; color-scheme: dark; }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15.5px/1.62 var(--font-body); }
+a { color: var(--accent); }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shell { max-width: 800px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 56px; display: grid; gap: 14px; }
+nav.memos { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+nav.memos a { text-decoration: none; padding: 6px 12px; border: 1px solid var(--rule); border-radius: 999px; color: var(--muted); background: var(--paper); }
+nav.memos a[aria-current="page"] { color: var(--paper); background: var(--accent); border-color: var(--accent); }
+article { background: var(--paper); border: 1px solid var(--rule); border-radius: 4px; padding-inline: clamp(18px, 5vw, 48px); padding-block: 36px 40px; display: grid; gap: 28px; }
+.kind { font: 600 12px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+dl.head { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 12px 0 0; padding-bottom: 18px; border-bottom: 2px solid var(--fg); }
+dl.head dt { font: 600 12px/1.9 var(--font-mono); letter-spacing: .08em; color: var(--muted); }
+dl.head dd { margin: 0; min-width: 0; }
+dl.head dd.re { font: 600 18px/1.35 var(--font-display); text-wrap: balance; }
+p { margin: 0; max-width: 68ch; }
+.bluf { font-size: 16.5px; }
+.ask { background: var(--ask-bg); border-left: 4px solid var(--ask-rule); padding: 14px 18px; display: grid; gap: 6px; }
+.ask .label { font: 600 12px/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+section { display: grid; gap: 10px; }
+article > *, section > *, figure > * { min-width: 0; }
+h2 { font: 600 19px/1.32 var(--font-display); margin: 0; text-wrap: balance; }
+h3 { font: 600 15px/1.4 var(--font-body); margin: 6px 0 0; }
+ul, ol { margin: 0; padding-left: 22px; display: grid; gap: 6px; max-width: 68ch; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--rule); border-radius: 4px; }
+.figs > div { padding: 12px 14px; display: grid; gap: 2px; align-content: start; }
+.figs > div + div { border-left: 1px solid var(--rule); }
+.figs .v { font: 500 26px/1.15 var(--font-mono); font-variant-numeric: tabular-nums; }
+.figs .v.hl { color: var(--accent); }
+.figs .k { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+@media (max-width: 560px) { .figs { grid-template-columns: 1fr; } .figs > div + div { border-left: 0; border-top: 1px solid var(--rule); } }
+figure { margin: 0; display: grid; gap: 8px; }
+figure img { width: 100%; height: auto; border: 1px solid var(--rule); border-radius: 3px; background: #fff; }
+figcaption { font-size: 13px; color: var(--muted); max-width: 68ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+.chart { overflow-x: auto; }
+.chart svg { display: block; width: 100%; min-width: 500px; height: auto; }
+.chart text { fill: var(--fg); font: 12px var(--font-mono); }
+.chart .lab { fill: var(--muted); }
+.chart .grid { stroke: var(--rule); }
+.bar-a { fill: var(--accent-2); } .bar-b { fill: var(--accent); }
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: right; padding: 5px 10px; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 600; color: var(--muted); font-size: 12px; }
+td { font-family: var(--font-mono); }
+td.txt { font-family: var(--font-body); text-align: left; }
+code { font: 13px var(--font-mono); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0 4px; overflow-wrap: anywhere; }
+pre { margin: 0; overflow-x: auto; background: var(--bg); border: 1px solid var(--rule); border-radius: 4px; padding: 10px 12px; font: 13px/1.5 var(--font-mono); }
+details { border-top: 1px solid var(--rule); padding-top: 12px; }
+summary { cursor: pointer; font-weight: 600; }
+details > :not(summary) { margin-top: 12px; }
+.next li strong { font-weight: 600; }
+footer { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 14px; display: grid; gap: 4px; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav class="memos" aria-label="Memos">
+    <a href="https://dogzzl1xy.github.io/lidar-coverage-pipeline/">1 · LiDAR coverage gaps</a>
+    <a href="https://dogzzl1xy.github.io/TreeBuilding2Tiff/" aria-current="page">2 · Height fusion tool</a>
+  </nav>
+
+  <article>
+    <header>
+      <div class="kind">Memorandum</div>
+      <dl class="head">
+        <dt>TO</dt><dd>Prof. Xiaojiang Li</dd>
+        <dt>FROM</dt><dd>Xuanyu Zhou</dd>
+        <dt>DATE</dt><dd>October 3, 2026</dd>
+        <dt>RE</dt><dd class="re">The height fusion tool works on U.S. LiDAR-gap towns; accuracy check proposed before scaling up</dd>
+      </dl>
+    </header>
+
+    <p class="bluf">The height fusion package combines Meta's canopy height map with Overture building heights into a single surface-height GeoTIFF, with pixels just under 1 m on the ground, for any boundary, using only public data. I tested it on two Michigan towns that have no modern LiDAR, and each took 75 to 85 seconds. <strong>Its accuracy has not been measured yet.</strong> Before running it on the full gap list from memo 1, I propose comparing its output with 3DEP LiDAR in a few towns that do have coverage.</p>
+
+    <div class="ask">
+      <div class="label">Decision requested</div>
+      <p>Approve the accuracy check below, and either name two Global South cities to test or let me choose them.</p>
+    </div>
+
+    <div class="figs" aria-label="Headline figures">
+      <div><div class="v">0.9 m</div><div class="k">ground pixel size in Michigan (1.2 m Web Mercator grid of the canopy map)</div></div>
+      <div><div class="v hl">≤ 85 s</div><div class="k">per small town (Gobles and Hartford, MI)</div></div>
+      <div><div class="v">7%</div><div class="k">of Gobles buildings needed an estimated height (89% in a Hong Kong sample)</div></div>
+    </div>
+
+    <section>
+      <h2>It produces a usable height layer for a gap town in under 90 seconds</h2>
+      <p>I chose Gobles city and Hartford city in Van Buren County, Michigan, because memo 1 shows both with 0% modern LiDAR in either source. The only LiDAR covering them was flown in December 2014. For a bounding box around Gobles, the tool found 500 Overture buildings and one canopy tile and wrote a 2,452 × 1,830 pixel grid. Heights have a median of 9 m and a maximum of 24 m. Run as a batch on the two town boundaries, it processed Gobles (468 buildings) in 74 seconds and Hartford (1,172 buildings) in 83 seconds.</p>
+      <figure>
+        <img src="gobles_fusion.png" alt="Two maps of central Gobles, Michigan. Left: canopy height only, in greens. Right: the fused output, where pixels raised by building footprints are marked in orange across the town grid." width="1137" height="511">
+        <figcaption>Figure 1. Central Gobles, MI (window 1.8 km wide in Web Mercator units). Left: Meta canopy height. Right: fused output; orange marks the 5.5% of pixels where a building is taller than the canopy. Sources: Meta Global Canopy Height; Overture Maps release 2026-09-23.1.</figcaption>
+      </figure>
+    </section>
+
+    <section>
+      <h2>In the U.S., most building heights come from Overture's own data</h2>
+      <p>When a building has no height, the tool estimates one at 3 m per floor, or 4 m if the floor count is also missing. In Gobles only 35 of 500 buildings (7%) needed an estimate. In an earlier Hong Kong sample the figure was 390 of 438 (89%). Places with sparse height data will rely much more on these defaults, so the Global South test needs to measure how much that affects results.</p>
+    </section>
+
+    <section>
+      <h2>An accuracy check against 3DEP should come before a large run</h2>
+      <p>No output has yet been compared with measured heights. I propose this check:</p>
+      <ol>
+        <li>Pick three to five towns that have full LiDAR coverage from 2015 or later, of different sizes and in different regions.</li>
+        <li>Run the tool there and build a reference surface height from the 3DEP point clouds.</li>
+        <li>Report the error separately for buildings and for tree canopy, and the share of buildings that used an estimated height.</li>
+        <li>Repeat the run, without the LiDAR comparison, for two Global South cities to measure how many heights are estimated there.</li>
+      </ol>
+      <p>Running the 396-town list after that would take roughly 9 hours on one machine at about 80 seconds per town. This is an estimate from the two test towns, and larger towns will take longer.</p>
+    </section>
+
+    <section>
+      <h2>Known limits</h2>
+      <ul>
+        <li>Most of the run time goes to querying Overture, about 60 to 80 seconds per area.</li>
+        <li>An area that spans canopy tiles in different coordinate systems fails and has to be split. Areas larger than a city should be split as well.</li>
+        <li>The output is a surface height (canopy or building top), not a 3D model; it does not separate building parts or tree shapes.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Next steps</h2>
+      <ol class="next">
+        <li><strong>You:</strong> approve the accuracy check, and name two Global South cities or let me choose.</li>
+        <li><strong>Me, after your reply:</strong> write the 3DEP comparison, run it in the selected towns, and send the error figures in a follow-up memo.</li>
+        <li><strong>Me, after the check:</strong> run the tool on the gap list you confirm in memo 1.</li>
+      </ol>
+    </section>
+
+    <details>
+      <summary>Appendix: how to run it</summary>
+      <pre>uv tool install git+https://github.com/DOGZzl1xy/TreeBuilding2Tiff
+
+# one area
+height-fusion --bbox -85.8889 42.3538 -85.8626 42.3683 --output gobles.tif
+
+# one GeoTIFF per feature, with layers for checking in QGIS
+height-fusion --boundary-geojson towns.geojson --each-feature --name-field GEOID \
+  --output outputs/towns --debug-dir outputs/towns_debug</pre>
+      <p>Output can also go to S3 (<code>--output s3://bucket/key.tif</code>). In Python: <code>from height_fusion_pipeline import fuse_heights</code>.</p>
+    </details>
+
+    <details>
+      <summary>Appendix: method</summary>
+      <ul>
+        <li>Buildings come from Overture Maps (queried with DuckDB for the requested area). Heights use, in order, the recorded height, floors × 3 m, or 4 m.</li>
+        <li>Canopy heights come from Meta's Global Canopy Height tiles, found through Meta's tile index. The output keeps the canopy grid and coordinate system (EPSG:3857, 1.2 m Web Mercator pixels, about 0.9 m on the ground in Michigan).</li>
+        <li>Each pixel takes the taller of canopy and building by default (<code>--fusion-mode max</code>). Pixels outside the boundary are set to nodata.</li>
+      </ul>
+    </details>
+
+    <footer>
+      <span>Code: <a href="https://github.com/DOGZzl1xy/TreeBuilding2Tiff">github.com/DOGZzl1xy/TreeBuilding2Tiff</a> (v0.2.0)</span>
+      <span>Previous memo: <a href="https://dogzzl1xy.github.io/lidar-coverage-pipeline/">LiDAR coverage gaps in the contiguous U.S.</a></span>
+    </footer>
+  </article>
+</div>
+</body>
+</html>
